@@ -9,7 +9,10 @@ test("completes the pathway while preventing premature actions", async ({ page }
   });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /One heat-pump installation/ })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.__pathwayMessages.at(-1)?.height)).toBeLessThan(1800);
+  await expect.poll(() => page.evaluate(() => window.__pathwayMessages.at(-1)?.height)).toBeGreaterThan(640);
+  const embedHeight = await page.evaluate(() => window.__pathwayMessages.at(-1).height);
+  const shellHeight = await page.locator(".app-shell").evaluate((element) => Math.ceil(element.getBoundingClientRect().height));
+  expect(Math.abs(embedHeight - shellHeight)).toBeLessThanOrEqual(1);
 
   await page.getByRole("button", { name: "Confirm survey evidence" }).click();
   await page.getByRole("button", { name: "Confirm planning evidence" }).click();

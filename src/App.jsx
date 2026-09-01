@@ -215,7 +215,7 @@ export function App() {
         stage: complete ? stages.length : pathway.currentIndex,
         blockersCaught: pathway.blockersCaught,
         unresolved: currentStage?.missing && !pathway.resolved[currentStage.id] ? 1 : 0,
-        height: Math.min(1800, Math.max(640, Math.ceil(contentHeight))),
+        height: Math.min(3600, Math.max(640, Math.ceil(contentHeight))),
       }, "*");
     };
     sendState();
