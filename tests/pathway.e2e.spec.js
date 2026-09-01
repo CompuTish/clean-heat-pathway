@@ -1,8 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 test("completes the pathway while preventing premature actions", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__pathwayMessages = [];
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "clean-heat-pathway") window.__pathwayMessages.push(event.data);
+    });
+  });
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /One heat-pump installation/ })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__pathwayMessages.at(-1)?.height)).toBeLessThan(1800);
 
   await page.getByRole("button", { name: "Confirm survey evidence" }).click();
   await page.getByRole("button", { name: "Confirm planning evidence" }).click();

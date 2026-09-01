@@ -206,6 +206,8 @@ export function App() {
 
   useEffect(() => {
     const sendState = () => {
+      const shell = document.querySelector(".app-shell");
+      const contentHeight = shell?.getBoundingClientRect().height ?? document.body.scrollHeight;
       window.parent?.postMessage({
         type: "clean-heat-pathway",
         version: 1,
@@ -213,12 +215,13 @@ export function App() {
         stage: complete ? stages.length : pathway.currentIndex,
         blockersCaught: pathway.blockersCaught,
         unresolved: currentStage?.missing && !pathway.resolved[currentStage.id] ? 1 : 0,
-        height: Math.min(1800, Math.max(640, document.documentElement.scrollHeight)),
+        height: Math.min(1800, Math.max(640, Math.ceil(contentHeight))),
       }, "*");
     };
     sendState();
     const observer = new ResizeObserver(sendState);
-    observer.observe(document.body);
+    const shell = document.querySelector(".app-shell");
+    observer.observe(shell ?? document.body);
     return () => observer.disconnect();
   }, [complete, currentStage, pathway]);
 
