@@ -1,49 +1,38 @@
-# Clean Heat Pathway design QA
+# Clean Energy Delivery Board design QA
 
-- Source visual truth: `design/clean-heat-pathway-option-3.png`
-- Final implementation screenshot: `design-qa/implementation-grid-desktop-final.png`
-- Full comparison: `design-qa/comparison-final.png`
-- Focused comparison: `design-qa/comparison-focused-final.png`
-- Mobile evidence: `design-qa/implementation-mobile-initial.png`
-- Desktop viewport: 1440 x 1024 CSS px at device scale factor 1
-- Source pixels: 1487 x 1058, normalised to 1440 x 1024 for comparison
-- Implementation pixels: 1440 x 1024
-- Compared state: Survey and Planning complete; Grid current with missing service evidence; live London grid data loaded
+- Source visual truth: `design/clean-energy-delivery-board-option-2-neighbourhood-map.png`
+- Final desktop screenshot: `design-qa/implementation-neighbourhood-map-desktop-final.png`
+- Final mobile screenshot: `design-qa/implementation-neighbourhood-map-mobile-final.png`
+- Side-by-side comparison: `design-qa/comparison-neighbourhood-map-final.png`
+- Desktop viewport and source: 1487 x 1058 CSS/image px at device scale factor 1
+- Mobile viewport: 390 x 844 CSS px at device scale factor 1
+- Compared state: Week 2 · Tight connections, initial planning board
 
 ## Findings
 
 No actionable P0, P1, or P2 findings remain.
 
-- Fonts and typography: The implementation uses the same heavy, compact system/Inter-like hierarchy as the selected mock. Headline scale, wrapping, small uppercase labels, and decision typography are visibly aligned after the second pass.
-- Spacing and layout rhythm: Header, split hero, expanded central stage, six-stage ribbon, feedback line, and live grid band reproduce the mock's information hierarchy. The functional evidence rows make the current stage slightly denser, but remain within the same proportion and do not crowd or clip controls.
-- Colors and visual tokens: White, dark ink, blue outlines, pale-ocean completed states, gold current state, orange primary action, and ruby warning accents match the source direction. The mock's faint atmospheric glow was intentionally omitted to honour the no-gradient constraint and the parent site's flat color system.
-- Image and icon fidelity: The visual contains interface icons rather than raster artwork. The implementation uses a single rounded Phosphor icon family throughout; no emoji, custom SVG, CSS illustration, or placeholder imagery is present.
-- Copy and content: The hero, six stages, missing-evidence decision, actions, live grid context, and educational disclaimer preserve the selected concept. Fake navigation and non-existent report/home actions from the mock were replaced with working About, Sources, and Restart controls.
+- Layout and hierarchy: the implementation preserves the selected map-first operations-board composition: compact command header, candidate queue, dominant neighbourhood map, Monday–Friday route rail, site inspector and wide resource dock. A concise mission/objective band was added above the board to make the goal understandable without relying on the wrapper page.
+- Typography and density: heavy Inter headings, compact uppercase labels and small operational metadata closely match the reference. All controls and labels remain readable at the target desktop viewport without clipping.
+- Colour and states: cobalt outlines, warm-white panels, pale-ocean geography, gold selection, ruby blockers and green readiness states match the approved direction. Status is never communicated by colour alone.
+- Image fidelity: the background map, five civic buildings, three fictional crew portraits and equipment/vehicle records are purpose-made raster assets. They remain identifiable at their rendered sizes and contain no brands, real people, addresses or embedded UI text.
+- Interaction fidelity: site cards, reusable crews, vehicles and route stops are draggable; resources drop onto map sites; routes accept and reorder site stops. Every drag action has a select-then-place click/tap equivalent. Undo, reset, explicit removal, readiness inspection and the deterministic run/review flow all work.
+- Content integrity: all scenarios, people, geography, distances, capacities, documents and outcomes are explicitly fictional. Public-source links provide context without presenting the model as regulatory, engineering, planning or procurement advice.
 
-## Comparison history
+## Responsive and implementation evidence
 
-### Pass 1 - blocked
+- Desktop and 390 px mobile captures have no horizontal overflow and no broken images.
+- Mobile uses visible Queue, Map, Week and Resources tabs plus a sticky selected-item tray, preserving the complete planning workflow without shrinking the desktop board.
+- Pointer drag and the non-drag click/tap workflow are covered in Playwright, alongside successful and failed week outcomes.
+- Unit coverage verifies exact resource matching, scheduled-failure consequences, route mileage, resource uniqueness and solvable Week 1 and Week 3 objectives.
+- Reduced-motion mode skips the day-by-day animation and presents results immediately.
+- Final desktop and mobile captures produced zero console errors and zero page errors.
+- The final source-to-implementation comparison was judged from the combined side-by-side image at the same desktop dimensions.
 
-- P2: the active-stage flex transition was captured before it settled, making Planning appear expanded while Grid contained the active content.
-- P2: the hero and pathway were too tall, pushing most of the live grid band below the 1024 px viewport.
-- P2: the initial render logged a missing-favicon resource error.
+## Deliberate differences from the mock
 
-Fixes: waited for the 180 ms state transition before capture; reduced hero/ribbon vertical density; removed the extra hero pill; added an explicit empty favicon; recaptured with zero console or page errors.
-
-### Pass 2 - passed
-
-Post-fix evidence shows the expanded Grid stage centred in the six-stage ribbon, the live grid band fully visible, the disclaimer present, and no clipping or overflow. Focused comparison confirms the active-stage anatomy, actions, completed/future states, and grid band remain faithful at readable scale.
-
-## Responsive and interaction evidence
-
-- Desktop and 390 x 844 mobile screenshots render without horizontal overflow.
-- The mobile design preserves the visual hierarchy, makes the active stage first, and keeps actions at touch-friendly sizes.
-- Complete pointer and keyboard pathway journeys are covered by Playwright.
-- Loading, API failure, warning, resolved, complete, hover, focus, and reduced-motion behavior are implemented.
-- Browser console and page errors checked: none in the final desktop and mobile captures.
-
-## Follow-up polish
-
-- P3: the mock uses chevron-shaped stage boundaries; the implementation uses simpler straight separators to avoid decorative CSS drawing and maintain more predictable responsive behavior.
+- The mock contains generic job packs and repeated vans; the implementation uses named fictional community sites and identifiable generated assets so planning choices are legible and outcome-led.
+- The implementation adds a site inspector, explicit remove controls and a deterministic result sheet because they are required to make the concept fully operable rather than visual-only.
+- The compact mission band surfaces the scenario objective, route cap and Week 3 capacity target in the standalone app.
 
 final result: passed

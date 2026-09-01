@@ -1,313 +1,147 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ArrowClockwise, ArrowRight, Check, CheckCircle, ClipboardText, FileText,
-  Gauge, Handshake, HouseLine, Lightning, MapPin, Plug, ShieldCheck,
-  Truck, Warning, Wrench,
-} from "@phosphor-icons/react";
-import { createInitialPathway, stages, transitionPathway } from "./pathway.js";
-import { fetchGridSnapshot, regions } from "./grid.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, TouchSensor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
+import { ArrowCounterClockwise, ArrowRight, CheckCircle, ClipboardText, FlagCheckered, Info, MapTrifold, Package, Play, Truck, UsersThree, Warning, X } from "@phosphor-icons/react";
+import { assignCrew, assignResource, assignVan, createPlan, evaluatePlan, inspectSite, scheduleSite, unassignResource, unscheduleSite } from "./planner.js";
+import { crews, days, getScenario, resources, scenarios, sites, vans } from "./scenarios.js";
+import mapImage from "./assets/neighbourhood-map.webp";
+import schoolImage from "./assets/site-school.webp";
+import libraryImage from "./assets/site-library.webp";
+import leisureImage from "./assets/site-leisure.webp";
+import hallImage from "./assets/site-hall.webp";
+import civicImage from "./assets/site-civic.webp";
+import northstarImage from "./assets/crew-northstar.webp";
+import oakImage from "./assets/crew-oak.webp";
+import skylineImage from "./assets/crew-skyline.webp";
+import solarImage from "./assets/solar-pallet.webp";
+import batteryImage from "./assets/battery-cabinet.webp";
+import inverterImage from "./assets/inverter-case.webp";
+import scaffoldImage from "./assets/scaffold-kit.webp";
+import approvalImage from "./assets/approval-record.webp";
+import cargoVanImage from "./assets/van-cargo.webp";
+import serviceVanImage from "./assets/van-service.webp";
+import liftVanImage from "./assets/van-lift.webp";
 
-const stageIcons = {
-  survey: ClipboardText,
-  planning: FileText,
-  grid: Plug,
-  parts: Truck,
-  install: Wrench,
-  handover: HouseLine,
+const assetImages = {
+  "site-school.png": schoolImage, "site-library.png": libraryImage, "site-leisure.png": leisureImage,
+  "site-hall.png": hallImage, "site-civic.png": civicImage,
+  "crew-northstar.png": northstarImage, "crew-oak.png": oakImage, "crew-skyline.png": skylineImage,
+  "solar-pallet.png": solarImage, "battery-cabinet.png": batteryImage, "inverter-case.png": inverterImage,
+  "scaffold-kit.png": scaffoldImage, "approval-record.png": approvalImage,
+  "van-cargo.png": cargoVanImage, "van-service.png": serviceVanImage, "van-lift.png": liftVanImage,
 };
 
-const mixColors = ["#005bb3", "#51bfc5", "#f6c84f", "#f86a38", "#d8226c", "#9db1bd"];
-
-function formatInterval(from, to) {
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-  return `${formatter.format(new Date(from))}–${formatter.format(new Date(to))}`;
+function DraggableCard({ dragId, data, className = "", children, label, onChoose }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: dragId, data });
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
+  return <button ref={setNodeRef} style={style} className={`drag-card ${className} ${isDragging ? "is-dragging" : ""}`} type="button" onClick={onChoose} aria-label={`${label}. Drag or select to place.`} {...listeners} {...attributes}>{children}</button>;
 }
 
-function EvidenceList({ stage, resolved }) {
-  return (
-    <ul className="evidence-list" aria-label={`${stage.name} evidence`}>
-      {stage.evidence.map((item) => {
-        const missing = item === stage.missing && !resolved;
-        return (
-          <li key={item} className={missing ? "is-missing" : "is-ready"}>
-            {missing ? <Warning aria-hidden="true" weight="fill" /> : <CheckCircle aria-hidden="true" weight="fill" />}
-            <span>{item}</span>
-            <strong>{missing ? "Missing" : "Ready"}</strong>
-          </li>
-        );
-      })}
-    </ul>
-  );
+function SitePin({ site, plan, active, selectedItem, onSiteClick, onInspect }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `site:${site.id}`, data: { type: "site-target", siteId: site.id } });
+  const inspection = inspectSite(plan, site.id);
+  return <div ref={setNodeRef} className={`site-pin ${active ? "is-active" : ""} ${isOver ? "is-over" : ""} ${inspection.ready ? "is-ready" : ""}`} style={{ left: `${site.x}%`, top: `${site.y}%` }}>
+    <button type="button" onClick={() => selectedItem?.type === "resource" ? onSiteClick(site.id) : onInspect(site.id)} aria-label={`${site.name}. ${inspection.ready ? "Ready" : `${inspection.blockers.length} blockers`}.`}>
+      <img src={assetImages[site.asset]} alt="" /><span><strong>{site.short}</strong><small>{site.capacity} kW · {inspection.ready ? "Ready" : `${inspection.blockers.length} to resolve`}</small></span>
+      {inspection.ready ? <CheckCircle weight="fill" aria-hidden="true" /> : <span className="pin-count">{inspection.blockers.length}</span>}
+    </button>
+  </div>;
 }
 
-function DecisionActions({ stage, resolved, onAction }) {
-  if (!stage.missing) {
-    return (
-      <button className="action action-primary" type="button" onClick={() => onAction("primary")}>
-        <Check aria-hidden="true" weight="bold" />
-        {stage.primaryLabel}
-      </button>
-    );
-  }
-
-  if (resolved) {
-    return (
-      <button className="action action-primary" type="button" onClick={() => onAction("continue")}>
-        {stage.continueLabel}
-        <ArrowRight aria-hidden="true" weight="bold" />
-      </button>
-    );
-  }
-
-  return (
-    <div className="action-group">
-      <button className="action action-primary" type="button" onClick={() => onAction("resolve")}>
-        <ShieldCheck aria-hidden="true" weight="bold" />
-        {stage.resolveLabel}
-      </button>
-      <button className="action action-secondary" type="button" onClick={() => onAction("escalate")}>
-        <Handshake aria-hidden="true" weight="bold" />
-        {stage.escalateLabel}
-      </button>
-      <button className="action-link" type="button" onClick={() => onAction("override")}>
-        {stage.overrideLabel}
-      </button>
-    </div>
-  );
+function DayLane({ day, route, activeDay, selectedItem, onPlace, onInspect }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day:${day}`, data: { type: "day-target", day } });
+  const crew = route.crewId ? crews[route.crewId] : null;
+  const van = route.vanId ? vans[route.vanId] : null;
+  return <div ref={setNodeRef} className={`day-lane ${isOver ? "is-over" : ""} ${activeDay === day ? "is-running" : ""}`} onClick={() => selectedItem && onPlace(day)}>
+    <div className="day-head"><strong>{day.slice(0, 3)}</strong><span>{route.sites.length} stop{route.sites.length === 1 ? "" : "s"}</span></div>
+    <div className="day-assignments"><span className={crew ? "is-set" : ""}><UsersThree aria-hidden="true" />{crew?.name ?? "Crew"}</span><span className={van ? "is-set" : ""}><Truck aria-hidden="true" />{van?.name ?? "Van"}</span></div>
+    <div className="route-stops">{route.sites.map((siteId, index) => <DraggableStop key={siteId} siteId={siteId} index={index} onInspect={onInspect} />)}{!route.sites.length && <span className="drop-hint">Drop a site here</span>}</div>
+  </div>;
 }
 
-function StageCard({ stage, status, resolved, onAction }) {
-  const Icon = stageIcons[stage.id];
-  const current = status === "current";
-  return (
-    <li className={`stage-card is-${status}`} aria-current={current ? "step" : undefined}>
-      <div className="stage-heading">
-        <span className="stage-number">{stage.number}</span>
-        <Icon className="stage-icon" aria-hidden="true" weight="regular" />
-        <div>
-          <h2>{stage.name}</h2>
-          <p>{stage.short}</p>
-        </div>
-        {status === "complete" && <CheckCircle className="complete-mark" aria-label="Complete" weight="fill" />}
-      </div>
-
-      {current && (
-        <div className="decision">
-          <div className="decision-label">
-            <span>{stage.missing && !resolved ? "Needs action" : "Ready to progress"}</span>
-          </div>
-          <h3>{stage.title}</h3>
-          <p>{stage.description}</p>
-          <EvidenceList stage={stage} resolved={resolved} />
-          <DecisionActions stage={stage} resolved={resolved} onAction={onAction} />
-        </div>
-      )}
-    </li>
-  );
+function DraggableStop({ siteId, index, onInspect }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `route-site:${siteId}`, data: { type: "site", id: siteId } });
+  return <button ref={setNodeRef} type="button" style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined} className={isDragging ? "is-dragging" : ""} onClick={(event) => { event.stopPropagation(); onInspect(siteId); }} {...listeners} {...attributes}><span>{index + 1}</span>{sites[siteId].short}</button>;
 }
 
-function GridPulse() {
-  const [regionId, setRegionId] = useState(13);
-  const [snapshot, setSnapshot] = useState(null);
-  const [status, setStatus] = useState("loading");
-
-  const load = useCallback(async (id, externalSignal) => {
-    const timeout = new AbortController();
-    const timer = window.setTimeout(() => timeout.abort(), 6500);
-    const abort = () => timeout.abort();
-    externalSignal?.addEventListener("abort", abort);
-    setStatus("loading");
-    try {
-      const result = await fetchGridSnapshot(id, timeout.signal);
-      setSnapshot(result);
-      setStatus("ready");
-    } catch {
-      if (!externalSignal?.aborted) setStatus("error");
-    } finally {
-      window.clearTimeout(timer);
-      externalSignal?.removeEventListener("abort", abort);
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    load(regionId, controller.signal);
-    return () => controller.abort();
-  }, [load, regionId]);
-
-  const topMix = useMemo(() => snapshot?.mix.slice(0, 6) ?? [], [snapshot]);
-
-  return (
-    <section className="grid-pulse" aria-labelledby="grid-pulse-title">
-      <div className="pulse-intro">
-        <span className={`live-dot ${status === "ready" ? "is-live" : ""}`} aria-hidden="true" />
-        <div>
-          <p className="eyebrow" id="grid-pulse-title">Grid right now</p>
-          <p className="pulse-note">Live regional context from NESO</p>
-        </div>
-      </div>
-
-      <label className="region-select">
-        <MapPin aria-hidden="true" weight="bold" />
-        <span>Region</span>
-        <select value={regionId} onChange={(event) => setRegionId(Number(event.target.value))}>
-          {regions.map((region) => <option key={region.id} value={region.id}>{region.name}</option>)}
-        </select>
-      </label>
-
-      {status === "ready" && snapshot ? (
-        <>
-          <div className="pulse-metric">
-            <Lightning aria-hidden="true" weight="bold" />
-            <span><strong>{snapshot.forecast}</strong> gCO₂/kWh</span>
-            <small>{formatInterval(snapshot.from, snapshot.to)}</small>
-          </div>
-          <div className="pulse-metric">
-            <Gauge aria-hidden="true" weight="bold" />
-            <span className={`intensity is-${snapshot.index.replace(" ", "-")}`}>{snapshot.index}</span>
-            <small>Forecast intensity</small>
-          </div>
-          <div className="generation-mix">
-            <div className="mix-heading"><strong>Generation mix</strong><span>% of regional electricity</span></div>
-            <div className="mix-bar" aria-hidden="true">
-              {topMix.map((item, index) => (
-                <span key={item.fuel} style={{ width: `${item.percent}%`, backgroundColor: mixColors[index] }} />
-              ))}
-            </div>
-            <ul>
-              {topMix.slice(0, 4).map((item, index) => (
-                <li key={item.fuel}><i style={{ backgroundColor: mixColors[index] }} />{item.fuel} {item.percent}%</li>
-              ))}
-            </ul>
-          </div>
-        </>
-      ) : (
-        <div className={`pulse-state is-${status}`} role="status">
-          {status === "loading" ? "Loading live grid data…" : (
-            <><span>Live signal unavailable.</span><button type="button" onClick={() => load(regionId)}>Try again</button></>
-          )}
-        </div>
-      )}
-    </section>
-  );
+function ResultSheet({ result, scenario, onClose, onReset }) {
+  return <div className="result-backdrop" role="presentation"><section className="result-sheet" role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <button className="icon-button close-result" type="button" onClick={onClose} aria-label="Close results"><X /></button>
+    <span className={`result-seal ${result.objectiveMet ? "is-success" : "is-warning"}`}>{result.objectiveMet ? <CheckCircle weight="fill" /> : <Warning weight="fill" />}</span>
+    <p className="eyebrow">Week {scenario.week} review</p><h2 id="result-title">{result.objectiveMet ? "Objective met" : "Plan needs another pass"}</h2>
+    <p>{result.objectiveMet ? "The planned visits completed without a failed arrival." : "The run exposed gaps before this plan should leave the board."}</p>
+    <dl className="result-metrics"><div><dt>Sites complete</dt><dd>{result.completed.length}/{scenario.targetSites}</dd></div><div><dt>Failed visits</dt><dd>{result.failed.length}</dd></div><div><dt>Route</dt><dd>{result.routeMiles}/{scenario.maxMiles} mi</dd></div><div><dt>Capacity unblocked</dt><dd>{result.capacity} kW</dd></div></dl>
+    {result.failed.length > 0 && <ul className="result-blockers">{result.siteResults.filter((item) => item.day && !item.ready).map((item) => <li key={item.siteId}><strong>{sites[item.siteId].name}</strong> — {item.blockers.join("; ")}</li>)}</ul>}
+    <div className="result-actions"><button className="button secondary" type="button" onClick={onReset}><ArrowCounterClockwise />Reset week</button><button className="button primary" type="button" onClick={onClose}>Return to board<ArrowRight /></button></div>
+  </section></div>;
 }
 
 export function App() {
-  const [pathway, setPathway] = useState(createInitialPathway);
-  const complete = pathway.currentIndex >= stages.length;
-  const currentStage = complete ? null : stages[pathway.currentIndex];
+  const [scenarioId, setScenarioId] = useState("tight-connections");
+  const scenario = useMemo(() => getScenario(scenarioId), [scenarioId]);
+  const [plan, setPlan] = useState(createPlan);
+  const [history, setHistory] = useState([]);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [selectedSite, setSelectedSite] = useState(scenario.siteIds[0]);
+  const [status, setStatus] = useState("planning");
+  const [result, setResult] = useState(null);
+  const [activeDay, setActiveDay] = useState(null);
+  const [activeDrag, setActiveDrag] = useState(null);
+  const [mobileView, setMobileView] = useState("map");
+  const runTimer = useRef(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 6 } }), useSensor(KeyboardSensor));
 
-  const act = (action) => setPathway((state) => transitionPathway(state, action));
-  const restart = () => setPathway(createInitialPathway());
-
+  const updatePlan = useCallback((transform) => {
+    setPlan((current) => { const next = transform(current); if (next !== current) setHistory((items) => [...items.slice(-19), current]); return next; });
+    setResult(null); setStatus("planning");
+  }, []);
+  const reset = useCallback(() => { window.clearInterval(runTimer.current); setPlan(createPlan()); setHistory([]); setSelectedItem(null); setResult(null); setStatus("planning"); setActiveDay(null); }, []);
+  useEffect(() => { reset(); setSelectedSite(scenario.siteIds[0]); }, [scenarioId, reset, scenario.siteIds]);
+  const choose = (type, id) => setSelectedItem((current) => current?.type === type && current.id === id ? null : { type, id });
+  const placeOnSite = (siteId) => { if (selectedItem?.type !== "resource") return; updatePlan((current) => assignResource(current, selectedItem.id, siteId)); setSelectedItem(null); setSelectedSite(siteId); };
+  const placeOnDay = (day) => { if (!selectedItem) return; const actions = { site: scheduleSite, crew: assignCrew, van: assignVan }; updatePlan((current) => actions[selectedItem.type]?.(current, selectedItem.id, day) ?? current); setSelectedItem(null); };
+  const removeResource = (resourceId) => updatePlan((current) => unassignResource(current, resourceId));
+  const removeFromRoute = (siteId) => updatePlan((current) => unscheduleSite(current, siteId));
+  const handleDragEnd = ({ active, over }) => {
+    setActiveDrag(null); if (!over) return; const source = active.data.current; const target = over.data.current;
+    if (source.type === "resource" && target.type === "site-target") updatePlan((current) => assignResource(current, source.id, target.siteId));
+    if (target.type === "day-target" && source.type === "site") updatePlan((current) => scheduleSite(current, source.id, target.day));
+    if (target.type === "day-target" && source.type === "crew") updatePlan((current) => assignCrew(current, source.id, target.day));
+    if (target.type === "day-target" && source.type === "van") updatePlan((current) => assignVan(current, source.id, target.day));
+  };
+  const currentEvaluation = useMemo(() => evaluatePlan(plan, scenario), [plan, scenario]);
+  const runWeek = () => {
+    const occupiedDays = days.filter((day) => plan.routes[day].sites.length); setStatus("running"); setResult(null); setSelectedItem(null);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !occupiedDays.length) { setActiveDay(null); setResult(currentEvaluation); setStatus("complete"); return; }
+    let index = 0; setActiveDay(occupiedDays[0]); runTimer.current = window.setInterval(() => { index += 1; if (index >= occupiedDays.length) { window.clearInterval(runTimer.current); setActiveDay(null); setResult(currentEvaluation); setStatus("complete"); } else setActiveDay(occupiedDays[index]); }, 650);
+  };
+  useEffect(() => () => window.clearInterval(runTimer.current), []);
   useEffect(() => {
-    const sendState = () => {
-      const shell = document.querySelector(".app-shell");
-      const contentHeight = shell?.getBoundingClientRect().height ?? document.body.scrollHeight;
-      window.parent?.postMessage({
-        type: "clean-heat-pathway",
-        version: 1,
-        status: complete ? "complete" : pathway.currentIndex === 0 ? "not-started" : "active",
-        stage: complete ? stages.length : pathway.currentIndex,
-        blockersCaught: pathway.blockersCaught,
-        unresolved: currentStage?.missing && !pathway.resolved[currentStage.id] ? 1 : 0,
-        height: Math.min(3600, Math.max(640, Math.ceil(contentHeight))),
-      }, "*");
-    };
-    sendState();
-    const observer = new ResizeObserver(sendState);
-    const shell = document.querySelector(".app-shell");
-    observer.observe(shell ?? document.body);
-    const mutations = new MutationObserver(sendState);
-    mutations.observe(shell ?? document.body, { childList: true, subtree: true, characterData: true });
-    return () => {
-      observer.disconnect();
-      mutations.disconnect();
-    };
-  }, [complete, currentStage, pathway]);
+    const sendState = () => { const shell = document.querySelector(".app-shell"); window.parent?.postMessage({ type: "clean-energy-delivery-board", version: 1, status, scenario: scenario.id, objectiveMet: Boolean(result?.objectiveMet), sitesReady: currentEvaluation.sitesReady, targetSites: scenario.targetSites, failedVisits: result?.failed.length ?? 0, unresolved: currentEvaluation.unresolved, routeMiles: currentEvaluation.routeMiles, height: Math.min(4200, Math.max(760, Math.ceil(shell?.getBoundingClientRect().height ?? document.body.scrollHeight))) }, "*"); };
+    sendState(); const observer = new ResizeObserver(sendState); observer.observe(document.querySelector(".app-shell") ?? document.body); return () => observer.disconnect();
+  }, [currentEvaluation, result, scenario, status]);
+  const assignedResources = new Set(Object.values(plan.allocations).flat());
+  const assignedCrews = new Set(days.map((day) => plan.routes[day].crewId).filter(Boolean));
+  const assignedVans = new Set(days.map((day) => plan.routes[day].vanId).filter(Boolean));
+  const selectedInspection = inspectSite(plan, selectedSite);
 
-  return (
+  return <DndContext sensors={sensors} onDragStart={({ active }) => setActiveDrag(active.data.current)} onDragCancel={() => setActiveDrag(null)} onDragEnd={handleDragEnd} accessibility={{ screenReaderInstructions: { draggable: "To pick up an item, press space. Move it to a highlighted destination, then press space again. You can also select an item and choose its destination." } }}>
     <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#pathway" aria-label="Clean Heat Pathway home">
-          <span className="brand-mark">IS</span>
-          <span>Clean Heat Pathway</span>
-        </a>
-        <nav aria-label="Project navigation">
-          <a href="#about">About the model</a>
-          <a href="#sources">Sources</a>
-          <button type="button" onClick={restart}><ArrowClockwise aria-hidden="true" weight="bold" />Restart</button>
-        </nav>
-      </header>
+      <header className="topbar"><a className="brand" href="#board" aria-label="Clean Energy Delivery Board home"><span className="brand-mark">IS</span><span>Clean Energy <b>Delivery Board</b></span></a><label className="scenario-picker"><span>Scenario</span><select value={scenarioId} onChange={(event) => setScenarioId(event.target.value)}>{scenarios.map((item) => <option key={item.id} value={item.id}>Week {item.week} · {item.name}</option>)}</select></label><div className="top-actions"><button className="button quiet" type="button" disabled={!history.length} onClick={() => { const previous = history.at(-1); if (previous) { setPlan(previous); setHistory((items) => items.slice(0, -1)); } }}><ArrowCounterClockwise />Undo</button><button className="button secondary" type="button" onClick={reset}>Reset</button><button className="button primary" type="button" onClick={runWeek} disabled={status === "running"}><Play weight="fill" />Run week</button></div></header>
 
-      <section className="hero" id="pathway">
-        <div>
-          <h1>One heat-pump installation, from survey to handover.</h1>
-        </div>
-        <p>Follow the operational pathway behind one fictional home. Check the evidence, notice exceptions and keep a clean-heat installation moving without skipping the details.</p>
+      <section className="mission-bar" aria-labelledby="mission-title"><div><p className="eyebrow">Week {scenario.week} · {scenario.name}</p><h1 id="mission-title">Plan the week. Protect every visit.</h1><p>{scenario.summary}</p></div><dl><div><dt>Objective</dt><dd>Activate {scenario.targetSites} sites · 0 failed visits</dd></div><div><dt>Route cap</dt><dd>{scenario.maxMiles} fictional miles</dd></div>{scenario.targetCapacity > 0 && <div><dt>Capacity</dt><dd>At least {scenario.targetCapacity} kW</dd></div>}</dl></section>
+      <nav className="mobile-tabs" aria-label="Board views">{["queue", "map", "week", "resources"].map((view) => <button key={view} type="button" className={mobileView === view ? "is-active" : ""} onClick={() => setMobileView(view)}>{view}</button>)}</nav>
+      <section className="board" id="board">
+        <aside className={`queue-panel mobile-${mobileView}`} aria-labelledby="queue-title"><div className="panel-heading"><span><ClipboardText /></span><div><p className="eyebrow">Project queue</p><h2 id="queue-title">Candidate sites</h2></div></div><div className="queue-list">{scenario.siteIds.map((siteId) => { const site = sites[siteId]; const inspection = inspectSite(plan, siteId); return <DraggableCard key={siteId} dragId={`drag-site:${siteId}`} data={{ type: "site", id: siteId }} label={site.name} className={selectedItem?.type === "site" && selectedItem.id === siteId ? "is-selected" : ""} onChoose={() => choose("site", siteId)}><img src={assetImages[site.asset]} alt="" /><span><strong>{site.name}</strong><small>{site.type} · {site.capacity} kW</small></span><i className={inspection.ready ? "ready" : "blocked"}>{inspection.ready ? "ready" : inspection.blockers.length}</i></DraggableCard>; })}</div><p className="panel-tip"><Info />Drag a site into the week, or select it then choose a day.</p></aside>
+        <section className={`map-panel mobile-${mobileView}`} aria-labelledby="map-title"><div className="map-toolbar"><div><p className="eyebrow">Neighbourhood map</p><h2 id="map-title">Fictional Eastborough</h2></div><button type="button" className="readiness" onClick={() => setSelectedSite(scenario.siteIds.find((id) => !inspectSite(plan, id).ready) ?? scenario.siteIds[0])}><FlagCheckered />Check readiness <strong>{currentEvaluation.sitesReady}/{scenario.targetSites}</strong></button></div><div className="map-canvas" style={{ backgroundImage: `url(${mapImage})` }}>{scenario.siteIds.map((siteId) => <SitePin key={siteId} site={sites[siteId]} plan={plan} active={selectedSite === siteId || Boolean(activeDay && plan.routes[activeDay].sites.includes(siteId))} selectedItem={selectedItem} onSiteClick={placeOnSite} onInspect={setSelectedSite} />)}<div className="map-key"><span><i className="key-dot ready" />Ready</span><span><i className="key-dot blocked" />Needs work</span><span><MapTrifold />Fictional geography</span></div></div><div className="site-inspector" aria-live="polite"><img src={assetImages[sites[selectedSite].asset]} alt="" /><div><p className="eyebrow">Site brief</p><h3>{sites[selectedSite].name}</h3><p>{sites[selectedSite].type} · {sites[selectedSite].capacity} kW fictional capacity</p><div className="placed-items">{(plan.allocations[selectedSite] ?? []).map((id) => <button type="button" key={id} onClick={() => removeResource(id)}>{resources[id].name}<X /></button>)}{selectedInspection.day && <button type="button" onClick={() => removeFromRoute(selectedSite)}>{selectedInspection.day}<X /></button>}</div></div><ul>{selectedInspection.blockers.length ? selectedInspection.blockers.map((blocker) => <li key={blocker}><Warning weight="fill" />{blocker}</li>) : <li className="is-ready"><CheckCircle weight="fill" />Ready to run</li>}</ul></div></section>
+        <aside className={`week-panel mobile-${mobileView}`} aria-labelledby="week-title"><div className="panel-heading"><span><MapTrifold /></span><div><p className="eyebrow">Route board</p><h2 id="week-title">Monday–Friday</h2></div></div><div className="week-lanes">{days.map((day) => <DayLane key={day} day={day} route={plan.routes[day]} activeDay={activeDay} selectedItem={selectedItem} onPlace={placeOnDay} onInspect={setSelectedSite} />)}</div><div className="score-card"><span>Live plan</span><strong>{currentEvaluation.routeMiles} / {scenario.maxMiles} mi</strong><small>{currentEvaluation.unresolved} unresolved requirement{currentEvaluation.unresolved === 1 ? "" : "s"}</small></div></aside>
       </section>
-
-      <section aria-label="Installation pathway">
-        <ol className="pathway-ribbon">
-          {stages.map((stage, index) => {
-            const status = complete || pathway.completed.includes(stage.id)
-              ? "complete"
-              : index === pathway.currentIndex ? "current" : "upcoming";
-            return <StageCard key={stage.id} stage={stage} status={status} resolved={Boolean(pathway.resolved[stage.id])} onAction={act} />;
-          })}
-        </ol>
-
-        <div className={`feedback is-${pathway.feedbackKind}`} role="status" aria-live="polite">
-          {pathway.feedbackKind === "warning" ? <Warning aria-hidden="true" weight="fill" /> : <CheckCircle aria-hidden="true" weight="fill" />}
-          <span>{pathway.feedback}</span>
-        </div>
-
-        {complete && (
-          <div className="completion" role="region" aria-labelledby="completion-title">
-            <div><ShieldCheck aria-hidden="true" weight="duotone" /></div>
-            <div>
-              <span className="eyebrow">Pathway ready</span>
-              <h2 id="completion-title">The handover pack is complete.</h2>
-              <p>You caught {pathway.blockersCaught} operational blockers before they became installation or handover failures{pathway.overridesPrevented ? `, and prevented ${pathway.overridesPrevented} premature ${pathway.overridesPrevented === 1 ? "step" : "steps"}` : ""}.</p>
-            </div>
-            <button className="action action-primary" type="button" onClick={restart}><ArrowClockwise aria-hidden="true" weight="bold" />Run it again</button>
-          </div>
-        )}
-      </section>
-
-      <GridPulse />
-      <p className="stage-disclaimer">Fictional home · Educational model · Reviewed 1 September 2026</p>
-
-      <section className="model-notes" id="about">
-        <div>
-          <span className="eyebrow">Why this pathway exists</span>
-          <h2>Clean technology depends on ordinary work done well.</h2>
-        </div>
-        <p>Decarbonising home heating is not only a technology question. It also relies on accurate evidence, clear ownership, timely parts and people recognising when a job has left the happy path.</p>
-      </section>
-
-      <section className="sources" id="sources" aria-labelledby="sources-title">
-        <div>
-          <span className="eyebrow">Sources and limits</span>
-          <h2 id="sources-title">Selected checkpoints, not a compliance tool.</h2>
-          <p>This model simplifies a real installation workflow. Rules can change and differ by nation, property and system. Always use current official guidance for real work.</p>
-        </div>
-        <ul>
-          <li><a href="https://mcscertified.com/wp-content/uploads/2025/07/MCS-020-a-Issue-1.1-Final.pdf" target="_blank" rel="noreferrer">MCS 020 planning standard</a></li>
-          <li><a href="https://mcscertified.com/wp-content/uploads/2025/01/MCS-031-2025-V1.0.pdf" target="_blank" rel="noreferrer">MCS 031 performance estimate</a></li>
-          <li><a href="https://www.energynetworks.org/industry/connecting-to-the-networks/connecting-electric-vehicles-and-heat-pumps" target="_blank" rel="noreferrer">ENA connection guidance</a></li>
-          <li><a href="https://api.carbonintensity.org.uk/" target="_blank" rel="noreferrer">NESO Carbon Intensity API</a></li>
-        </ul>
-      </section>
-
-      <footer>
-        <span>Fictional home · Educational model · Reviewed 1 September 2026</span>
-        <a href="https://isabelsmith.me/" target="_top">Isabel Smith</a>
-      </footer>
+      <section className={`resource-dock mobile-${mobileView}`} aria-labelledby="resources-title"><div className="dock-heading"><div><p className="eyebrow">Resource dock</p><h2 id="resources-title">People, kit and records</h2></div><p>Drag to a site or day. On touch, select an item first.</p></div><div className="resource-groups"><div className="resource-group"><h3><UsersThree />Crews</h3><div>{scenario.crewIds.map((id) => <DraggableCard key={id} dragId={`drag-crew:${id}`} data={{ type: "crew", id }} label={crews[id].name} className={`${assignedCrews.has(id) ? "is-assigned" : ""} ${selectedItem?.type === "crew" && selectedItem.id === id ? "is-selected" : ""}`} onChoose={() => choose("crew", id)}><img src={assetImages[crews[id].asset]} alt="" /><span><strong>{crews[id].name}</strong><small>{crews[id].skill} team</small></span></DraggableCard>)}</div></div><div className="resource-group kit"><h3><Package />Equipment & approvals</h3><div>{scenario.resourceIds.map((id) => <DraggableCard key={id} dragId={`drag-resource:${id}`} data={{ type: "resource", id }} label={resources[id].name} className={`${assignedResources.has(id) ? "is-assigned" : ""} ${selectedItem?.type === "resource" && selectedItem.id === id ? "is-selected" : ""}`} onChoose={() => choose("resource", id)}><img src={assetImages[resources[id].asset]} alt="" /><span><strong>{resources[id].name}</strong><small>{resources[id].kind}</small></span></DraggableCard>)}</div></div><div className="resource-group"><h3><Truck />Vehicles</h3><div>{scenario.vanIds.map((id) => <DraggableCard key={id} dragId={`drag-van:${id}`} data={{ type: "van", id }} label={vans[id].name} className={`${assignedVans.has(id) ? "is-assigned" : ""} ${selectedItem?.type === "van" && selectedItem.id === id ? "is-selected" : ""}`} onChoose={() => choose("van", id)}><img src={assetImages[vans[id].asset]} alt="" /><span><strong>{vans[id].name}</strong><small>{vans[id].kind} work</small></span></DraggableCard>)}</div></div></div></section>
+      {selectedItem && <div className="selection-tray" role="status"><span>Selected: <strong>{sites[selectedItem.id]?.name ?? crews[selectedItem.id]?.name ?? vans[selectedItem.id]?.name ?? resources[selectedItem.id]?.name}</strong></span><span>Choose a {selectedItem.type === "resource" ? "map site" : "day"} to place it.</span><button type="button" onClick={() => setSelectedItem(null)}>Cancel</button></div>}
+      <section className="about" id="about"><div><p className="eyebrow">About the model</p><h2>Delivery is a chain of small, checkable promises.</h2></div><p>This fictional planning board explores how site records, matching equipment, capable people and sensible routing turn clean-energy ambition into completed work. It is deliberately deterministic: the same plan always produces the same result, so every outcome can be traced back to a planning choice.</p></section>
+      <section className="sources" id="sources"><div><p className="eyebrow">Context, not compliance</p><h2>Grounded in public guidance</h2><p>Reviewed 1 September 2026. The site names, distances, capacities, documents and outcomes in this model are fictional.</p></div><ul><li><a href="https://www.london.gov.uk/programmes-strategies/environment-and-climate-change/climate-change/zero-carbon-london/london-community-energy-fund" target="_blank" rel="noreferrer">London Community Energy Fund</a></li><li><a href="https://www.energynetworks.org/industry/connecting-to-the-networks/distributed-generation" target="_blank" rel="noreferrer">ENA distributed generation guidance</a></li><li><a href="https://www.gov.uk/guidance/renewable-and-low-carbon-energy" target="_blank" rel="noreferrer">GOV.UK planning guidance</a></li></ul></section>
+      <footer><p>Fictional educational operations model — not engineering, connection, planning, procurement, regulatory or safety advice.</p><a href="https://isabelsmith.me" target="_top">Back to isabelsmith.me</a></footer>
     </main>
-  );
+    <DragOverlay>{activeDrag && <div className="drag-overlay">{sites[activeDrag.id]?.name ?? crews[activeDrag.id]?.name ?? vans[activeDrag.id]?.name ?? resources[activeDrag.id]?.name}</div>}</DragOverlay>
+    {result && <ResultSheet result={result} scenario={scenario} onClose={() => setResult(null)} onReset={reset} />}
+  </DndContext>;
 }

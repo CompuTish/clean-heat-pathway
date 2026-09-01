@@ -1,8 +1,10 @@
-# Clean Heat Pathway
+# Clean Energy Delivery Board
 
-An interactive educational model following one fictional English home through the operational pathway from heat-pump survey to customer handover.
+An interactive, deterministic planning board for a fictional English neighbourhood. Visitors match clean-energy projects with site-specific equipment and approval records, assign capable crews and vehicles, plan Monday–Friday routes, then run the week and review the measurable outcome.
 
-The project focuses on the work that makes clean technology scalable: complete evidence, accurate records, grid coordination, parts confirmation, exception handling, and a complete handover pack. It is not an installation, planning, electrical, MCS, DNO, or regulatory compliance tool.
+Three scenarios build in difficulty: a guided foundation week, a tight-connections week, and a supplier squeeze where five candidate sites compete for enough resources to deliver three. The same plan always produces the same outcome, so failed visits, route miles and clean-energy capacity can be traced to specific planning choices.
+
+The public route remains `/projects/clean-heat-pathway/` for continuity; the visible project name is Clean Energy Delivery Board.
 
 ## Development
 
@@ -17,15 +19,16 @@ npm run test:sites
 
 `npm run export:firebase` builds the app and copies only the static client into the parent `personal-sites` repository at `clean_heat_demo/public/`. That tracked export is deployed through the parent's named Firebase target.
 
-## Data and sources
+## Interaction and accessibility
 
-- Live regional electricity data: [NESO Carbon Intensity API](https://api.carbonintensity.org.uk/), licensed CC BY 4.0.
-- Planning noise evidence: [MCS 020 a, Issue 1.1](https://mcscertified.com/wp-content/uploads/2025/07/MCS-020-a-Issue-1.1-Final.pdf).
-- Performance estimate context: [MCS 031: 2025](https://mcscertified.com/wp-content/uploads/2025/01/MCS-031-2025-V1.0.pdf).
-- Grid connection context: [Energy Networks Association guidance](https://www.energynetworks.org/industry/connecting-to-the-networks/connecting-electric-vehicles-and-heat-pumps).
+Resources and site cards can be dragged onto map or day destinations with pointer, touch, or keyboard controls. Every action also has a click/tap path: select an item, then choose a site or day. Mobile visitors switch between Queue, Map, Week, and Resources while a sticky tray preserves their current selection.
 
-Regulatory summaries were last reviewed on 1 September 2026. They intentionally represent selected operational checkpoints rather than the full requirements for any real property or system.
+The app has no accounts, analytics, cookies, forms, network data, or persistent storage. It does not accept real addresses or customer details.
 
-## Privacy and resilience
+## Context and sources
 
-The app has no accounts, analytics, cookies, forms, or persistent storage and does not accept real property or customer details. NESO data is fetched directly in the browser. If the live API is unavailable or returns an unexpected schema, the pathway remains functional and the grid panel shows an explicit unavailable state.
+- [London Community Energy Fund](https://www.london.gov.uk/programmes-strategies/environment-and-climate-change/climate-change/zero-carbon-london/london-community-energy-fund)
+- [Energy Networks Association: distributed generation](https://www.energynetworks.org/industry/connecting-to-the-networks/distributed-generation)
+- [GOV.UK: renewable and low-carbon energy planning guidance](https://www.gov.uk/guidance/renewable-and-low-carbon-energy)
+
+Context was last reviewed on 1 September 2026. All site names, distances, capacities, resources, records, people, and operational results are fictional. This is an educational operations model, not engineering, connection, planning, procurement, regulatory, or safety advice.
