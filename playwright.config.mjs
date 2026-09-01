@@ -7,7 +7,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4193",
     browserName: "chromium",
-    channel: "chrome",
+    channel: process.env.CI ? undefined : "chrome",
     viewport: { width: 1440, height: 1024 },
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
