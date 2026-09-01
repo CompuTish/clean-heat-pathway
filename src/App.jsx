@@ -222,7 +222,12 @@ export function App() {
     const observer = new ResizeObserver(sendState);
     const shell = document.querySelector(".app-shell");
     observer.observe(shell ?? document.body);
-    return () => observer.disconnect();
+    const mutations = new MutationObserver(sendState);
+    mutations.observe(shell ?? document.body, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+    };
   }, [complete, currentStage, pathway]);
 
   return (
